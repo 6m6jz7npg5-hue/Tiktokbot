@@ -2,19 +2,19 @@ import os
 import telebot
 from telebot import types
 
-TOKEN = '8937971566:AAHx4iLorg1ZFi1ssT6bCpDQSzl7wWintIY'
+TOKEN = '8955349729:AAG0JdkQ5gyFd-IPqjjDJHlj1xtLXiNFjBY'
 bot = telebot.TeleBot(TOKEN)
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = types.InlineKeyboardMarkup(row_width=1)
     btn_analysis = types.InlineKeyboardButton("📊 تحليل حساب التيك توك", callback_data='tiktok_analysis')
-    btn_bots = types.InlineKeyboardButton("🤖 زر البوتات", callback_data='bots_menu')
+    btn_bots = types.InlineKeyboardButton("🤖 قائمة جيش البوتات", callback_data='bots_menu')
     markup.add(btn_analysis, btn_bots)
     
     bot.send_message(
         message.chat.id, 
-        "🤖 أهلاً بك يا كينغ في لوحة التحكم الرئيسية.\nاختر أحد الخيارات أدناه:", 
+        "🤖 أهلاً بك يا كينغ في لوحة التحكم الرئيسية لجيش التيك توك.\nاختر أحد الخيارات أدناه:", 
         reply_markup=markup
     )
 
@@ -32,12 +32,12 @@ def callback_query(call):
         btn3 = types.InlineKeyboardButton("❤️ اللايكات", callback_data='bot_likes')
         btn4 = types.InlineKeyboardButton("👥 المتابعات", callback_data='bot_follows')
         btn5 = types.InlineKeyboardButton("👀 المشاهدات", callback_data='bot_views')
-        btn_single = types.InlineKeyboardButton("⚙️ تحكم بحساب بوت منفصل", callback_data='single_bot_ctrl')
+        btn_single = types.InlineKeyboardButton("⚙️ اختيار بوت من الجيش للتحكم", callback_data='single_bot_ctrl')
         btn_back = types.InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data='main_menu')
         
         markup.add(btn1, btn2, btn3, btn4, btn5, btn_single, btn_back)
         bot.edit_message_text(
-            "🤖 **قائمة البوتات والخدمات:**\nاختر القسم المطلوب:", 
+            "🤖 **قائمة جيش بوتات التيك توك والخدمات:**\nاختر القسم المطلوب:", 
             call.message.chat.id, 
             call.message.message_id, 
             reply_markup=markup
@@ -47,7 +47,7 @@ def callback_query(call):
         bot.answer_callback_query(call.id)
         markup = types.InlineKeyboardMarkup(row_width=1)
         btn_analysis = types.InlineKeyboardButton("📊 تحليل حساب التيك توك", callback_data='tiktok_analysis')
-        btn_bots = types.InlineKeyboardButton("🤖 زر البوتات", callback_data='bots_menu')
+        btn_bots = types.InlineKeyboardButton("🤖 قائمة جيش البوتات", callback_data='bots_menu')
         markup.add(btn_analysis, btn_bots)
         
         bot.edit_message_text(
@@ -59,11 +59,11 @@ def callback_query(call):
         
     elif call.data in ['bot_msgs', 'bot_comments', 'bot_likes', 'bot_follows', 'bot_views']:
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "⚙️ تم اختيار القسم، جاري التفعيل...")
+        bot.send_message(call.message.chat.id, "⚙️ تم اختيار القسم لجيش البوتات، جاري التنفيذ...")
         
     elif call.data == 'single_bot_ctrl':
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "⚙️ أرسل معرف حساب البوت المنفصل للتحكم به:")
+        bot.send_message(call.message.chat.id, "🎯 **التحكم الفردي:**\nأرسل الآن معرف (ID) أو اسم بوت التيك توك المحدد من الجيش الذي ترغب بالتحكم به:")
 
 if __name__ == '__main__':
     print("🤖 البوت يعمل سحابياً...")
