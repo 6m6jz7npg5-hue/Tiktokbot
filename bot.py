@@ -4,11 +4,15 @@ import json
 import re
 import time
 
-# ---------- الإعدادات ----------
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"   # ضع توكن البوت هنا
+# ============================================================
+# 🔴 هام جداً: هذا التوكن تم وضعه بناءً على طلبك، لكنه أصبح مكشوفاً.
+# يرجى إلغاؤه فوراً من @BotFather واستبدال الرقم أدناه بالتوكن الجديد.
+# ============================================================
+BOT_TOKEN = "8955349729:AAG0JdkQ5gyFd-IPqjjDJHlj1xtLXiNFjBY"
+
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# رؤوس تحاكي متصفح حقيقي (لتجنب الحظر)
+# رؤوس تحاكي المتصفح لتجنب الحظر
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -39,8 +43,8 @@ def get_tiktok_user_data(username: str):
         "video_count": "غير متاح",
         "total_likes": "غير متاح",
         "create_time": "غير متاح",
-        "videos": [],          # قائمة بالفيديوهات (كل فيديو: id, url, desc)
-        "repost_videos": []    # لا يمكن جلبها من هذه النقطة
+        "videos": [],
+        "repost_videos": []
     }
 
     url = f"https://www.tiktok.com/@{username}"
@@ -52,39 +56,34 @@ def get_tiktok_user_data(username: str):
         html = resp.text
 
         # 1. استخراج كائن JSON من <script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">
-        # هذا الكائن يحتوي على كل بيانات الصفحة
         pattern = r'<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>(.*?)</script>'
         match = re.search(pattern, html, re.DOTALL)
         if not match:
-            # محاولة البحث عن SIGI_STATE القديم
             pattern_old = r'<script id="SIGI_STATE"[^>]*>(.*?)</script>'
             match = re.search(pattern_old, html, re.DOTALL)
             if not match:
                 return result
+        
         json_text = match.group(1)
         data = json.loads(json_text)
 
         # 2. استكشاف المسار الصحيح للبيانات
-        # هيكل البيانات يختلف أحياناً، نحاول عدة مسارات
         user_info = None
 
-        # المسار 1: __UNIVERSAL_DATA_FOR_REHYDRATION__ -> __DEFAULT_SCOPE__ -> { 'webapp.user-detail': ... }
+        # المسار 1: __UNIVERSAL_DATA_FOR_REHYDRATION__
         if "__DEFAULT_SCOPE__" in data:
             default = data["__DEFAULT_SCOPE__"]
             if "webapp.user-detail" in default:
                 user_info = default["webapp.user-detail"].get("userInfo", {})
             elif "user-detail" in default:
                 user_info = default["user-detail"].get("userInfo", {})
-        # المسار 2: SIGI_STATE -> UserModule -> users -> { secUid: ... }
+        # المسار 2: SIGI_STATE
         elif "UserModule" in data and "users" in data["UserModule"]:
             users_dict = data["UserModule"]["users"]
             if users_dict:
-                # نأخذ أول مستخدم (المفتاح هو secUid)
                 first_key = next(iter(users_dict))
                 user_info = users_dict[first_key]
-        # المسار 3: مباشرة في data إذا كان الهيكل مختلفاً
         else:
-            # قد يكون userInfo موجوداً في الجذر
             if "userInfo" in data:
                 user_info = data["userInfo"]
             elif "user" in data:
@@ -93,21 +92,18 @@ def get_tiktok_user_data(username: str):
         if not user_info:
             return result
 
-        # 3. استخراج الحقول من كائن user_info (قد يكون له هيكل داخلي)
-        # عادة يكون user_info يحتوي على مفاتيح: id, uniqueId, nickname, signature, avatarLarger, stats, etc.
+        # 3. استخراج الحقول
         result["user_id"] = user_info.get("id", "غير متاح")
         result["unique_id"] = user_info.get("uniqueId", username)
         result["nickname"] = user_info.get("nickname", "غير متاح")
         result["bio"] = user_info.get("signature", "غير متاح")
 
-        # الصورة الرمزية (قد تكون في avatarLarger أو avatarMedium)
         avatar = user_info.get("avatarLarger", {})
         if isinstance(avatar, dict):
             result["avatar_url"] = avatar.get("urlList", ["غير متاح"])[0] if avatar.get("urlList") else "غير متاح"
         elif isinstance(avatar, str):
             result["avatar_url"] = avatar
 
-        # الإحصائيات (قد تكون في stats أو مباشرة)
         stats = user_info.get("stats", {})
         if stats:
             result["follower_count"] = stats.get("followerCount", "غير متاح")
@@ -115,30 +111,23 @@ def get_tiktok_user_data(username: str):
             result["video_count"] = stats.get("videoCount", "غير متاح")
             result["total_likes"] = stats.get("heartCount", "غير متاح")
         else:
-            # بعض الهياكل تضع الإحصائيات في المستوى الأعلى
             result["follower_count"] = user_info.get("followerCount", "غير متاح")
             result["following_count"] = user_info.get("followingCount", "غير متاح")
             result["video_count"] = user_info.get("videoCount", "غير متاح")
             result["total_likes"] = user_info.get("heartCount", "غير متاح")
 
-        # تاريخ الإنشاء غير موجود عادة في هذه البيانات
         result["create_time"] = "غير متاح"
 
-        # 4. جلب الفيديوهات (من بيانات الصفحة نفسها)
-        # توجد قائمة الفيديوهات في مسار مختلف، عادة تحت "itemList" أو "videoList"
+        # 4. جلب الفيديوهات
         video_items = []
-        # محاولة استخراج من __DEFAULT_SCOPE__ -> webapp.user-detail -> itemList
         if "__DEFAULT_SCOPE__" in data and "webapp.user-detail" in data["__DEFAULT_SCOPE__"]:
             detail = data["__DEFAULT_SCOPE__"]["webapp.user-detail"]
             if "itemList" in detail:
                 video_items = detail["itemList"]
-        # أو من UserModule -> posts
         elif "UserModule" in data and "posts" in data["UserModule"]:
             video_items = data["UserModule"]["posts"]
 
-        # إذا لم نجد، نحاول البحث في JSON العام عن مفتاح "itemList" أو "awemeList"
         if not video_items:
-            # بحث عشوائي في كل البيانات
             def find_list(obj, keys):
                 if isinstance(obj, dict):
                     for k, v in obj.items():
@@ -150,11 +139,9 @@ def get_tiktok_user_data(username: str):
                 return None
             video_items = find_list(data, ["itemList", "awemeList", "posts"]) or []
 
-        # بناء قائمة الفيديوهات (حد أقصى 20)
         for i, item in enumerate(video_items[:20]):
             video_id = item.get("id", item.get("awemeId", "غير متاح"))
             desc = item.get("desc", item.get("title", ""))
-            # الرابط: https://www.tiktok.com/@username/video/video_id
             if video_id != "غير متاح":
                 video_url = f"https://www.tiktok.com/@{username}/video/{video_id}"
             else:
@@ -162,19 +149,18 @@ def get_tiktok_user_data(username: str):
             result["videos"].append({
                 "id": video_id,
                 "url": video_url,
-                "desc": desc[:50]  # اختصار الوصف
+                "desc": desc[:50]
             })
 
-        # الريبوستات لا يمكن جلبها من هذه الصفحة مباشرة
         result["repost_videos"] = []
 
     except Exception as e:
-        # في حال حدوث أي خطأ، نعود بالنتيجة الافتراضية
+        # في حال أي خطأ، نعود بالبيانات الافتراضية
         pass
 
     return result
 
-# ---------- أوامر البوت ----------
+# ========== أوامر البوت ==========
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     bot.reply_to(message,
@@ -227,7 +213,7 @@ def handle_username(message):
 
     bot.reply_to(message, reply, parse_mode="Markdown")
 
-# ---------- تشغيل البوت ----------
+# ========== تشغيل البوت ==========
 if __name__ == "__main__":
-    print("🤖 البوت يعمل...")
+    print("🤖 البوت يعمل الآن على Render...")
     bot.infinity_polling()
