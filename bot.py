@@ -2,7 +2,7 @@ import logging
 import re
 import requests
 from bs4 import BeautifulSoup
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaVideo
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -13,8 +13,8 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# تعريف الحالات للتحكم بتسلسل المحادثة
-CHOOSING, TYPING_USERNAME, ACCOUNT_VIEW, STORY_VIEW = range(4)
+# تعريف الحالات لتنظيم تدفق المحادثة والأزرار المتفرعة
+CHOOSING, TYPING_USERNAME, ACCOUNT_VIEW = range(3)
 
 # إعداد التسجيل
 logging.basicConfig(
@@ -26,15 +26,13 @@ logger = logging.getLogger(__name__)
 # توكن البوت
 BOT_TOKEN = "8955349729:AAG0JdkQ5gyFd-IPqjjDJHlj1xtLXiNFjBY"
 
-# ========== دوال تنظيف وجلب بيانات تيك توك الحقيقية ==========
+# ========== دوال جلب البيانات من تيك توك ==========
 def clean_url(url: str) -> str:
-    """تنظيف الروابط من الهروب البرمجي"""
     if not url:
         return url
     return url.replace("\\/", "/").replace("\\u002F", "/")
 
 def fetch_tiktok_data(username: str) -> dict:
-    """جلب بيانات الحساب الحقيقية من الصفحة العامة لـ تيك توك"""
     url = f"https://www.tiktok.com/@{username}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -82,7 +80,6 @@ def fetch_tiktok_data(username: str) -> dict:
                             pass
                         user_data[key] = value
             
-            # استخراج روابط الفيديوهات المتاحة
             video_urls = re.findall(r'"playAddr":"([^"]+)"', json_text)
             if video_urls:
                 user_data["video_urls"] = [clean_url(v) for v in video_urls[:5]]
@@ -96,7 +93,6 @@ def fetch_tiktok_data(username: str) -> dict:
     return user_data if user_data else None
 
 def format_user_data(username: str, data: dict) -> str:
-    """تنسيق البيانات الحقيقية لعرضها بشكل مرتب"""
     if not data:
         return f"⚠️ تعذر جلب بيانات الحساب @{username}. تأكد من صحة اليوزر أو أن الحساب عام."
 
@@ -126,13 +122,11 @@ def format_user_data(username: str, data: dict) -> str:
 
     return "\n".join(lines)
 
-# ========== دوال الواجهة والأزرار ==========
+# ========== دوال التنقل والأزرار التفاعلية ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     keyboard = [
         [InlineKeyboardButton("🔍 فحص حساب", callback_data="check_account")],
-        [InlineKeyboardButton("📖 عرض الاستوريات", callback_data="stories")],
-        [InlineKeyboardButton("🔄 الريبوستات", callback_data="reposts")],
         [InlineKeyboardButton("🛡️ طريقة الدخول", callback_data="login_info")],
         [InlineKeyboardButton("🌍 معلومات الدولة", callback_data="country_info")],
     ]
@@ -141,7 +135,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message:
         await update.message.reply_text("👋 أهلاً بك يا كينغ في بوت تحليل تيك توك:\nاختر العملية التي تريدها:", reply_markup=reply_markup)
     elif update.callback_query:
-        await update.callback_query.message.edit_text("اختر العملية:", reply_markup=reply_markup)
+        query = update.callback_query
+        await query.answer()
+        await query.message.edit_text("👋 اختر العملية التي تريدها:", reply_markup=reply_markup)
     return CHOOSING
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -150,25 +146,28 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     data = query.data
 
     if data == "check_account":
-        await query.edit_message_text("📝 أرسل الآن يوزر حساب تيك توك الذي تريد فحصه (بدون @):")
+        await query.message.edit_text("📝 أرسل الآن يوزر حساب تيك توك الذي تريد فحصه (بدون @):")
         context.user_data["state"] = "waiting_for_username"
         return TYPING_USERNAME
 
-    elif data == "stories":
-        await query.edit_message_text("📖 ميزة عرض الاستوريات المباشرة تتطلب تفاعل الحساب أو أن تكون متاحة عامة.")
-        return CHOOSING
-
-    elif data == "reposts":
-        await query.edit_message_text("🔄 ميزة الريبوستات قيد التطوير.")
-        return CHOOSING
-
     elif data == "login_info":
-        await query.edit_message_text("🛡️ معلومات الدخول (إيميل/رقم) خاصة بالمستخدم ولا يمكن جلبها نهائياً من الواجهة العامة لأي حساب.")
+        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_menu")]]
+        await query.message.edit_text(
+            "🛡️ معلومات الدخول (إيميل/رقم) خاصة بالمستخدم ولا يمكن جلبها نهائياً من الواجهة العامة لأي حساب.",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         return CHOOSING
 
     elif data == "country_info":
-        await query.edit_message_text("🌍 معلومات الدولة تظهر إن كانت متاحة في السجلات العامة، وغالباً ما يخفيها المستخدمون.")
+        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_menu")]]
+        await query.message.edit_text(
+            "🌍 معلومات الدولة تظهر إن كانت متاحة في السجلات العامة، وغالباً ما يخفيها المستخدمون.",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         return CHOOSING
+
+    elif data == "back_to_menu":
+        return await start(update, context)
 
     return CHOOSING
 
@@ -181,7 +180,11 @@ async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     data = fetch_tiktok_data(username)
     if not data:
-        await update.message.reply_text(f"⚠️ تعذر جلب بيانات الحساب @{username}. تأكد من صحة اليوزر وأن الحساب ليس خاصاً (Private).")
+        keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_menu")]]
+        await update.message.reply_text(
+            f"⚠️ تعذر جلب بيانات الحساب @{username}. تأكد من صحة اليوزر وأن الحساب ليس خاصاً.",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         context.user_data["state"] = None
         return CHOOSING
 
@@ -190,8 +193,10 @@ async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     formatted = format_user_data(username, data)
 
+    # أزرار متفرعة بعد فحص الحساب
     keyboard = [
-        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="back_to_menu")],
+        [InlineKeyboardButton("📖 عرض الاستوريات / الفيديوهات", callback_data="show_stories")],
+        [InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_menu")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -214,14 +219,55 @@ async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def account_view_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    if query.data == "back_to_menu":
+    data = query.data
+
+    if data == "back_to_menu":
         return await start(update, context)
+
+    elif data == "show_stories":
+        account_data = context.user_data.get("account_data", {})
+        video_urls = account_data.get("video_urls", [])
+        
+        if not video_urls:
+            keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back_to_menu")]]
+            await query.message.edit_text("⚠️ لا توجد فيديوهات/استوريات متاحة لهذا الحساب.", reply_markup=InlineKeyboardMarkup(keyboard))
+            return ACCOUNT_VIEW
+
+        # عرض أول فيديو كمثال مع أزرار التنقل (التالي، السابق، الرجوع)
+        context.user_data["stories"] = video_urls
+        context.user_data["story_index"] = 0
+        
+        await send_story_message(update, context)
+        return ACCOUNT_VIEW
+
     return ACCOUNT_VIEW
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("تم الإلغاء. استخدم /start للبدء من جديد.")
-    context.user_data.clear()
-    return ConversationHandler.END
+async def send_story_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    stories = context.user_data.get("stories", [])
+    index = context.user_data.get("story_index", 0)
+    
+    if not stories:
+        return
+
+    video_url = stories[index]
+    total = len(stories)
+
+    keyboard = [
+        [
+            InlineKeyboardButton("◀️ السابق", callback_data="prev_story"),
+            InlineKeyboardButton(f"{index+1}/{total}", callback_data="noop"),
+            InlineKeyboardButton("التالي ▶️", callback_data="next_story"),
+        ],
+        [InlineKeyboardButton("🔙 رجوع لملف الحساب", callback_data="back_to_account")],
+    ]
+    
+    # بما أن الـ callback query يعرض فيديو أو رسالة جديدة
+    await query.message.reply_video(
+        video=video_url,
+        caption=f"🎬 فيديو رقم {index+1} من {total}",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 # ========== التشغيل الرئيسي ==========
 def main() -> None:
@@ -230,18 +276,24 @@ def main() -> None:
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            CHOOSING: [CallbackQueryHandler(button_callback)],
-            TYPING_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_username)],
-            ACCOUNT_VIEW: [CallbackQueryHandler(account_view_callback)],
+            CHOOSING: [
+                CallbackQueryHandler(button_callback, pattern="^(check_account|login_info|country_info|back_to_menu)$")
+            ],
+            TYPING_USERNAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_username),
+                CallbackQueryHandler(button_callback)
+            ],
+            ACCOUNT_VIEW: [
+                CallbackQueryHandler(account_view_callback)
+            ],
         },
         fallbacks=[
             CommandHandler("start", start),
-            CommandHandler("cancel", cancel),
         ],
     )
 
     application.add_handler(conv_handler)
     application.run_polling()
 
-if __name__ == "__main__":
+if __name> == "__main__":
     main()
