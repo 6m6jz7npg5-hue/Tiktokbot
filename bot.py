@@ -24,6 +24,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ========== دوال جلب البيانات من تيك توك ==========
+def clean_url(url: str) -> str:
+    """تنظيف الروابط من الهروب (escaping) مثل \\/ و \\u002F"""
+    if not url:
+        return url
+    return url.replace("\\/", "/").replace("\\u002F", "/")
+
 def fetch_tiktok_data(username: str) -> dict:
     """
     جلب بيانات حساب تيك توك من الصفحة العامة.
@@ -44,7 +50,6 @@ def fetch_tiktok_data(username: str) -> dict:
     soup = BeautifulSoup(response.text, "html.parser")
     user_data = {}
 
-    # البحث عن بيانات JSON المدمجة في الصفحة
     scripts = soup.find_all("script")
     for script in scripts:
         if script.string and "userInfo" in script.string:
@@ -57,8 +62,8 @@ def fetch_tiktok_data(username: str) -> dict:
                 "nickname": r'"nickname":"([^"]+)"',
                 "uniqueId": r'"uniqueId":"([^"]+)"',
                 "avatarLarger": r'"avatarLarger":"([^"]+)"',
-                "signature": r'"signature":"((?:[^"\\]|\\.)*)"',  # البايو
-                "region": r'"region":"([^"]+)"',                  # البلد
+                "signature": r'"signature":"((?:[^"\\]|\\.)*)"',
+                "region": r'"region":"([^"]+)"',
                 "verified": r'"verified":(true|false)',
             }
             for key, pattern in patterns.items():
@@ -69,18 +74,25 @@ def fetch_tiktok_data(username: str) -> dict:
                     elif key == "verified":
                         user_data[key] = match.group(1) == "true"
                     else:
-                        user_data[key] = match.group(1).encode().decode('unicode_escape')  # فك ترميز النصوص
+                        # فك الترميز بشكل آمن
+                        value = match.group(1)
+                        value = value.encode().decode('unicode_escape')
+                        user_data[key] = value
             # استخراج أحدث الفيديوهات (لعمل الستوري)
             video_urls = re.findall(r'"playAddr":"([^"]+)"', json_text)
             if video_urls:
-                user_data["video_urls"] = video_urls[:5]  # أول 5 فيديوهات
+                # تنظيف الروابط
+                user_data["video_urls"] = [clean_url(v) for v in video_urls[:5]]
+            # تنظيف رابط الصورة الرمزية
+            if "avatarLarger" in user_data:
+                user_data["avatarLarger"] = clean_url(user_data["avatarLarger"])
             if user_data:
                 break
 
     return user_data if user_data else None
 
 def format_user_data(username: str, data: dict) -> str:
-    """تنسيق البيانات لعرضها في رسالة نصية."""
+    """تنسيق البيانات لعرضها في الكابشن أسفل الصورة."""
     if not data:
         return f"⚠️ تعذر جلب بيانات الحساب @{username}. تأكد من أن اليوزر صحيح."
 
@@ -91,6 +103,8 @@ def format_user_data(username: str, data: dict) -> str:
         lines.append(f"🆔 اليوزر: @{data['uniqueId']}")
     if "region" in data:
         lines.append(f"🌍 البلد: {data['region']}")
+    else:
+        lines.append("🌍 البلد: غير متاح (مخفي)")
     if "signature" in data and data["signature"]:
         lines.append(f"📝 البايو: {data['signature']}")
     if "followerCount" in data:
@@ -103,15 +117,25 @@ def format_user_data(username: str, data: dict) -> str:
         lines.append(f"🎬 الفيديوهات: {data['videoCount']:,}")
     if "verified" in data and data["verified"]:
         lines.append("✔️ موثّق")
+
+    # إضافة الملاحظات المطلوبة
+    lines.append("\n📌 ملاحظات:")
+    lines.append("• معلومات الدولة قد لا تكون متاحة للعامة.")
+    lines.append("• معلومات الدخول (إيميل/رقم) خاصة ولا يمكن جلبها من الصفحة العامة.")
     return "\n".join(lines)
 
 # ========== دوال معالجة الأوامر والأزرار ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """إرسال رسالة الترحيب مع الأزرار الرئيسية."""
+    """إرسال رسالة الترحيب مع الأزرار الرئيسية، وتنظيف الحالة السابقة."""
+    # تنظيف أي بيانات قديمة
+    context.user_data.clear()
+
     keyboard = [
         [InlineKeyboardButton("🔍 فحص حساب", callback_data="check_account")],
         [InlineKeyboardButton("📖 عرض الاستوريات", callback_data="stories")],
         [InlineKeyboardButton("🔄 الريبوستات", callback_data="reposts")],
+        [InlineKeyboardButton("🛡️ طريقة الدخول", callback_data="login_info")],
+        [InlineKeyboardButton("🌍 معلومات الدولة", callback_data="country_info")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
@@ -132,11 +156,25 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return TYPING_USERNAME
 
     elif data == "stories":
-        await query.edit_message_text("⚠️ لعرض الستوري، يجب أولاً فحص حساب معين ثم الضغط على زر عرض الستوري.")
+        await query.edit_message_text("📖 ميزة عرض الاستوريات غير متوفرة حالياً.")
         return CHOOSING
 
     elif data == "reposts":
-        await query.edit_message_text("⚠️ لجلب الريبوست، يجب أولاً فحص حساب معين ثم الضغط على زر جلب الريبوست.")
+        await query.edit_message_text("🔄 ميزة الريبوستات غير متوفرة حالياً.")
+        return CHOOSING
+
+    elif data == "login_info":
+        await query.edit_message_text(
+            "🛡️ معلومات الدخول (مثل الإيميل أو رقم الهاتف) هي معلومات خاصة وحساسة، "
+            "ولا يمكن جلبها من الصفحة العامة لأي حساب. تيك توك يحمي هذه البيانات ولا يعرضها إلا لصاحب الحساب نفسه."
+        )
+        return CHOOSING
+
+    elif data == "country_info":
+        await query.edit_message_text(
+            "🌍 معلومات الدولة (الموقع الجغرافي) غالباً ما تكون مخفية في ملف الحساب العام، "
+            "ولا يمكن استخراجها بشكل موثوق. تيك توك يسمح للمستخدم بإخفاء هذه المعلومة."
+        )
         return CHOOSING
 
     else:
@@ -162,15 +200,10 @@ async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     context.user_data["account_data"] = data
     context.user_data["current_username"] = username
 
-    # إرسال الصورة الرمزية إن وجدت
-    if "avatarLarger" in data:
-        try:
-            await update.message.reply_photo(photo=data["avatarLarger"])
-        except Exception as e:
-            logger.warning(f"Could not send avatar: {e}")
-
-    # إرسال المعلومات النصية
+    # إعداد الكابشن (المعلومات)
     formatted = format_user_data(username, data)
+
+    # إعداد أزرار ما بعد الفحص
     keyboard = [
         [
             InlineKeyboardButton("📖 عرض الستوري", callback_data="show_stories"),
@@ -179,7 +212,20 @@ async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         [InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_menu")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(formatted, reply_markup=reply_markup)
+
+    # إرسال الصورة الرمزية كصورة مع الكابشن إن وجدت
+    if "avatarLarger" in data and data["avatarLarger"]:
+        try:
+            await update.message.reply_photo(
+                photo=data["avatarLarger"],
+                caption=formatted,
+                reply_markup=reply_markup,
+            )
+        except Exception as e:
+            logger.warning(f"Could not send avatar: {e}, sending text only")
+            await update.message.reply_text(formatted, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(formatted, reply_markup=reply_markup)
 
     context.user_data["state"] = None
     return ACCOUNT_VIEW
@@ -191,8 +237,7 @@ async def account_view_callback(update: Update, context: ContextTypes.DEFAULT_TY
     data = query.data
 
     if data == "back_to_menu":
-        await back_to_menu(update, context)
-        return CHOOSING
+        return await back_to_menu(update, context)
 
     elif data == "show_stories":
         return await show_stories(update, context)
@@ -215,7 +260,6 @@ async def show_stories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await query.edit_message_text("⚠️ لا توجد فيديوهات متاحة لهذا الحساب.")
         return ACCOUNT_VIEW
 
-    # حفظ قائمة الفيديوهات والمؤشر الحالي
     context.user_data["stories"] = data["video_urls"]
     context.user_data["story_index"] = 0
 
@@ -245,13 +289,11 @@ async def send_story(update: Update, context: ContextTypes.DEFAULT_TYPE, edit: b
 
     try:
         if edit:
-            # تعديل الرسالة الحالية إلى فيديو جديد
             await query.edit_message_media(
                 media=InputMediaVideo(media=video_url),
                 reply_markup=reply_markup,
             )
         else:
-            # إرسال فيديو جديد
             await query.message.reply_video(
                 video=video_url,
                 reply_markup=reply_markup,
@@ -307,6 +349,8 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             [InlineKeyboardButton("🔍 فحص حساب", callback_data="check_account")],
             [InlineKeyboardButton("📖 عرض الاستوريات", callback_data="stories")],
             [InlineKeyboardButton("🔄 الريبوستات", callback_data="reposts")],
+            [InlineKeyboardButton("🛡️ طريقة الدخول", callback_data="login_info")],
+            [InlineKeyboardButton("🌍 معلومات الدولة", callback_data="country_info")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text("اختر العملية:", reply_markup=reply_markup)
@@ -321,7 +365,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # ========== الدالة الرئيسية ==========
 def main() -> None:
     """تشغيل البوت."""
-    # التوكن الخاص بك
     application = Application.builder().token("8955349729:AAG0JdkQ5gyFd-IPqjjDJHlj1xtLXiNFjBY").build()
 
     conv_handler = ConversationHandler(
@@ -340,7 +383,10 @@ def main() -> None:
                 CallbackQueryHandler(story_view_callback),
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[
+            CommandHandler("start", start),   # يسمح بالعودة للقائمة من أي حالة
+            CommandHandler("cancel", cancel),
+        ],
     )
 
     application.add_handler(conv_handler)
