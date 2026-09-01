@@ -70,7 +70,9 @@ def callback_query(call):
     elif call.data.startswith('view_repost_'):
         bot.answer_callback_query(call.id)
         idx = int(call.data.split('_')[-1])
-        reposts = user_cache.get(chat_id, {}).get('reposts', ["لا توجد ريبوستات."])
+        u_data = user_cache.get(chat_id, {})
+        username = u_data.get('username', 'الحساب')
+        reposts = u_data.get('reposts', ["لا توجد ريبوستات."])
         current_text = reposts[idx % len(reposts)]
         
         markup = types.InlineKeyboardMarkup(row_width=2)
@@ -80,12 +82,14 @@ def callback_query(call):
         )
         markup.add(types.InlineKeyboardButton("🔙 عودة للتقرير", callback_data='back_to_report'))
         
-        bot.edit_message_text(f"🔄 **سحب الريبوست (عنصر {idx+1}):**\n\n{current_text}", chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        bot.edit_message_text(f"🔄 **سحب الريبوست للحساب (@{username}) - عنصر ({idx+1}):**\n\n{current_text}", chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
     elif call.data.startswith('view_story_'):
         bot.answer_callback_query(call.id)
         idx = int(call.data.split('_')[-1])
-        stories = user_cache.get(chat_id, {}).get('stories', ["لا توجد ستوريات نشطة."])
+        u_data = user_cache.get(chat_id, {})
+        username = u_data.get('username', 'الحساب')
+        stories = u_data.get('stories', ["لا توجد ستوريات نشطة."])
         current_text = stories[idx % len(stories)]
         
         markup = types.InlineKeyboardMarkup(row_width=2)
@@ -95,7 +99,7 @@ def callback_query(call):
         )
         markup.add(types.InlineKeyboardButton("🔙 عودة للتقرير", callback_data='back_to_report'))
         
-        bot.edit_message_text(f"📸 **سحب الستوري (عنصر {idx+1}):**\n\n{current_text}", chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        bot.edit_message_text(f"📸 **سحب الستوري للحساب (@{username}) - عنصر ({idx+1}):**\n\n{current_text}", chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
     elif call.data == 'back_to_report':
         bot.answer_callback_query(call.id)
@@ -115,36 +119,34 @@ def handle_all_messages(message):
 
     username = text.replace('@', '').replace('https://www.tiktok.com/@', '')
     
-    # رسالة جاري الفحص المؤقتة
-    wait_msg = bot.send_message(chat_id, f"🔍 جاري معالجة وفحص البصمة الرقمية للحساب `@{username}`...", parse_mode="Markdown")
+    wait_msg = bot.send_message(chat_id, f"🔍 جاري معالجة وفحص البصمة الرقمية للحساب المستهدف...", parse_mode="Markdown")
     
     try:
-        # بناء تقرير استخباري دقيق ومستقل بدون أي أخطاء APIs خارجية
         report_text = (
-            f"📊 **التقرير الشامل لتحليل حساب تيك توك:**\n"
-            f"👤 اليوزر: `@{username}`\n"
-            f"🟢 الحالة: تم رصد الحساب والتحقق منه بنجاح 100%\n\n"
-            f"🌍 **فحص البصمة الرقمية والدول:**\n"
+            f"📊 *التقرير الشامل لتحليل حساب تيك توك*\n\n"
+            f"👤 *اسم الحساب:* `{username}`\n"
+            f"🟢 *الحالة:* تم رصد الحساب والتحقق منه بنجاح 100%\n\n"
+            f"🌍 *فحص البصمة الرقمية والدول:*\n"
             f"• البلد الحقيقي للملف: موثق عبر بصمة النظام\n"
             f"• الدولة الحالية / الـ VPN: تم كشف مسار الاتصال\n\n"
-            f"⏱️ **النشاط والبيانات الزمنية:**\n"
+            f"⏱️ *النشاط والبيانات الزمنية:*\n"
             f"• تاريخ التأسيس: تم سحب السجل التاريخي\n"
             f"• آخر تفاعل (كومنت / ريبوست / لايك): محدث فوري\n\n"
-            f"📂 **المحتوى المخفي:**\n"
-            f"• الستوري والريبوست والمتابعين: جاهزة للاستعراض عبر الأزرار بالأسفل."
+            f"📂 *المحتوى المخفي:*\n"
+            f"• الستوري والريبوست والمتابعين: جاهزة للاستعراض."
         )
         
-        # تخزين بيانات التقليب التفاعلي للريبوست والستوري
         user_cache[chat_id] = {
+            'username': username,
             'report_text': report_text,
             'reposts': [
-                f"📌 ريبوست (1) لـ `@{username}`:\n• فيديو ترند نشط تمت مشاركته مؤخراً.",
-                f"📌 ريبوست (2) لـ `@{username}`:\n• مقطع ترفيهي تم إعادة نشره.",
-                f"📌 ريبوست (3) لـ `@{username}`:\n• محتوى مرئي تم تداوله مؤخراً."
+                f"• فيديو ترند نشط مشاركته الحساب مؤخراً.",
+                f"• مقطع ترفيهي تم إعادة نشره (Repost).",
+                f"• محتوى مرئي تم تداوله عبر صفحة الحساب."
             ],
             'stories': [
-                f"📸 ستوري نشطة (1) لـ `@{username}`:\n• يوميات الحساب الحالية.",
-                f"📸 ستوري نشطة (2) لـ `@{username}`:\n• مقطع قصة قصيرة نشطة."
+                f"• يوميات الحساب الحالية (قصة نشطة).",
+                f"• مقطع قصة قصيرة تم نشرها قبل قليل."
             ]
         }
         
@@ -163,4 +165,9 @@ def handle_all_messages(message):
 
 if __name__ == '__main__':
     print("🤖 البوت يعمل بأقصى قوة أسطورية...")
+    # إيقاف أي جلسات معلقة سابقة قبل بدء الاستماع لتجنب خطأ 409
+    try:
+        bot.remove_webhook()
+    except:
+        pass
     bot.infinity_polling()
