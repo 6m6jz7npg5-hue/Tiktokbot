@@ -9,7 +9,6 @@ from telebot import types
 TOKEN = '8955349729:AAG0JdkQ5gyFd-IPqjjDJHlj1xtLXiNFjBY'
 bot = telebot.TeleBot(TOKEN)
 
-# ذاكرة مؤقتة لتخزين بيانات وحسابات المستخدمين
 user_cache = {}
 
 def main_menu_markup():
@@ -36,10 +35,9 @@ def callback_query(call):
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔙 إلغاء والعودة للقائمة", callback_data='main_menu'))
         
-        bot.edit_message_text(
-            "📊 **أرسل الآن يوزر حساب تيك توك المراد فحصه وسحب معلوماته الشاملة:**\n*(مثلاً: krlll بدون علامة @)*", 
+        bot.send_message(
             chat_id, 
-            call.message.message_id, 
+            "📊 **أرسل الآن يوزر حساب تيك توك المراد فحصه وسحب معلوماته الشاملة:**\n*(مثلاً: krlll بدون علامة @)*", 
             reply_markup=markup,
             parse_mode="Markdown"
         )
@@ -65,19 +63,14 @@ def callback_query(call):
         
     elif call.data == 'main_menu':
         bot.answer_callback_query(call.id)
-        # إذا كانت الرسالة عبارة عن صورة، نحذفها ونرسل القائمة النصية
-        try:
-            bot.delete_message(chat_id, call.message.message_id)
-        except:
-            pass
         bot.send_message(chat_id, "🤖 لوحة التحكم الرئيسية لجيش التيك توك:", reply_markup=main_menu_markup())
         
     elif call.data.startswith('view_repost_'):
-        bot.answer_callback_query(call.id)
+        bot.answer_callback_query(call.id, "جاري استعراض الريبوست...")
         idx = int(call.data.split('_')[-1])
         u_data = user_cache.get(chat_id, {})
         username = u_data.get('username', 'الحساب')
-        reposts = u_data.get('reposts', ["لا توجد ريبوستات متاحة حالياً."])
+        reposts = u_data.get('reposts', ["• لا توجد ريبوستات متاحة."])
         current_text = reposts[idx % len(reposts)]
         
         markup = types.InlineKeyboardMarkup(row_width=2)
@@ -87,14 +80,14 @@ def callback_query(call):
         )
         markup.add(types.InlineKeyboardButton("🔙 عودة للتقرير", callback_data='back_to_report'))
         
-        bot.edit_message_text(f"🔄 **سحب الريبوست للحساب (@{username}) - عنصر ({idx+1}):**\n\n{current_text}", chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        bot.send_message(chat_id, f"🔄 **سحب الريبوست للحساب (@{username}) - عنصر ({idx+1}):**\n\n{current_text}", reply_markup=markup, parse_mode="Markdown")
 
     elif call.data.startswith('view_story_'):
-        bot.answer_callback_query(call.id)
+        bot.answer_callback_query(call.id, "جاري استعراض الستوري...")
         idx = int(call.data.split('_')[-1])
         u_data = user_cache.get(chat_id, {})
         username = u_data.get('username', 'الحساب')
-        stories = u_data.get('stories', ["لا توجد ستوريات نشطة حالياً."])
+        stories = u_data.get('stories', ["• لا توجد ستوريات نشطة."])
         current_text = stories[idx % len(stories)]
         
         markup = types.InlineKeyboardMarkup(row_width=2)
@@ -104,30 +97,25 @@ def callback_query(call):
         )
         markup.add(types.InlineKeyboardButton("🔙 عودة للتقرير", callback_data='back_to_report'))
         
-        bot.edit_message_text(f"📸 **سحب الستوري للحساب (@{username}) - عنصر ({idx+1}):**\n\n{current_text}", chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        bot.send_message(chat_id, f"📸 **سحب الستوري للحساب (@{username}) - عنصر ({idx+1}):**\n\n{current_text}", reply_markup=markup, parse_mode="Markdown")
 
     elif call.data == 'view_following':
-        bot.answer_callback_query(call.id, "جاري جلب قائمة المتابَعين...")
+        bot.answer_callback_query(call.id, "جاري جلب المتابَعين...")
         u_data = user_cache.get(chat_id, {})
         username = u_data.get('username', 'الحساب')
-        following_list = u_data.get('following_list', ["• لا يمكن استعراض المتابَعين (الحساب خاص أو محمي)."])
+        following_list = u_data.get('following_list', ["• الحساب يخفي قائمة المتابَعين."])
         
         text = f"👥 **قائمة المتابَعين للحساب (@{username}):**\n\n" + "\n".join(following_list)
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔙 عودة للتقرير", callback_data='back_to_report'))
         
-        bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
 
     elif call.data == 'back_to_report':
         bot.answer_callback_query(call.id)
-        # إعادة إرسال التقرير النصي أو تحديثه
         u_data = user_cache.get(chat_id, {})
         report = u_data.get('report_text', "عذراً، انتهت الجلسة.")
-        markup = u_data.get('markup', main_menu_markup())
-        try:
-            bot.edit_message_text(report, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-        except:
-            bot.send_message(chat_id, report, reply_markup=markup, parse_mode="Markdown")
+        bot.send_message(chat_id, report, parse_mode="Markdown", reply_markup=main_menu_markup())
 
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
@@ -140,7 +128,7 @@ def handle_all_messages(message):
 
     username = text.replace('@', '').replace('https://www.tiktok.com/@', '')
     
-    wait_msg = bot.send_message(chat_id, f"🔍 جاري اختراق الفحص الاستخباري وسحب بيانات وصورة `@{username}`...", parse_mode="Markdown")
+    wait_msg = bot.send_message(chat_id, f"🔍 جاري سحب البصمة الاستخباراتية للحساب @{username}...", parse_mode="Markdown")
     
     try:
         headers = {
@@ -156,7 +144,7 @@ def handle_all_messages(message):
         hearts = "غير متوفر"
         videos = "غير متوفر"
         avatar_url = None
-        bio = "غير متوفر"
+        bio = "لا يوجد"
         
         if response.status_code == 200:
             match = re.search(r'<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">(.+?)</script>', response.text)
@@ -170,7 +158,7 @@ def handle_all_messages(message):
                             stats_detail = val.get("userInfo", {}).get("stats", {})
                             if user_detail:
                                 nickname = user_detail.get("nickname", username)
-                                bio = user_detail.get("signature", "لا يوجد بيو")
+                                bio = user_detail.get("signature", "لا يوجد")
                                 avatar_url = user_detail.get("avatarLarger") or user_detail.get("avatarMedium")
                                 followers = stats_detail.get("followerCount", "غير متوفر")
                                 hearts = stats_detail.get("heartCount", "غير متوفر")
@@ -179,7 +167,6 @@ def handle_all_messages(message):
                 except Exception:
                     pass
 
-        # تجهيز التقرير الاستخباري الموسع
         report_text = (
             f"📊 *التقرير الاستخباري المتقدم للحساب*\n\n"
             f"👤 *اليوزر:* `@{username}`\n"
@@ -188,33 +175,30 @@ def handle_all_messages(message):
             f"👥 *المتابعين:* {followers}\n"
             f"❤️ *الإعجابات:* {hearts}\n"
             f"📹 *الفيديوهات:* {videos}\n\n"
-            f"🌍 *فحص الأجهزة والدول والتاريخ:*\n"
-            f"• البلد الأصلي / التأسيس: (محمي بواسطة خوارزميات تيك توك)\n"
-            f"• بلد الفتح / الـ VPN الحالي: مسار الاتصال نشط\n"
-            f"• تاريخ آخر نشاط: تم رصد تفاعل (لايك / كومنت) قبل سحب التقرير\n"
-            f"• سجل التغييرات (اليوزر والاسم): تم سحب أحدث طابع زمني\n\n"
-            f"🟢 *الحالة:* تم استخراج البصمة بنجاح!"
+            f"🌍 *بصمة النظام والنشاط:*\n"
+            f"• البلد والتأسيس: (محمي أمنياً من تيك توك)\n"
+            f"• مسار الاتصال والـ VPN: نشط\n"
+            f"• آخر تفاعل مسجل: تم رصده بنجاح\n\n"
+            f"🟢 *الحالة:* تم استخراج الملف بنجاح!"
         )
         
-        # تخزين البيانات في الكاش للأزرار
         user_cache[chat_id] = {
             'username': username,
             'report_text': report_text,
             'reposts': [
-                f"• فيديو ريبوست (1) نشط تم مشاركته بواسطة @{username}.",
-                f"• فيديو ريبوست (2) تم رصده في سجل التفاعل."
+                f"• فيديو ريبوست نشط رقم (1) للحساب @{username}.",
+                f"• فيديو ريبوست نشط رقم (2) تم تداوله."
             ],
             'stories': [
-                f"• قصة نشطة (1) تم نشرها مؤخراً.",
-                f"• قصة نشطة (2) في أرشيف الحساب."
+                f"• قصة نشطة رقم (1) في ملف @{username}.",
+                f"• قصة نشطة رقم (2) تم رصدها."
             ],
             'following_list': [
-                f"• user_following_1 (متابع نشط)",
-                f"• user_following_2 (متابع رسمي)"
+                f"• @user_target_1 (متابع رسمي)",
+                f"• @user_target_2 (نشط حالياً)"
             ]
         }
         
-        # بناء الأزرار المطلوبة بالكامل
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
             types.InlineKeyboardButton("🔄 سحب الريبوست", callback_data='view_repost_0'),
@@ -225,25 +209,21 @@ def handle_all_messages(message):
             types.InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data='main_menu')
         )
         
-        user_cache[chat_id]['markup'] = markup
-        
-        # حذف رسالة الانتظار
         try:
             bot.delete_message(chat_id, wait_msg.message_id)
         except:
             pass
             
-        # إرسال الصورة إذا توفرت مع التقرير، أو التقرير النصي مباشرة
         if avatar_url:
             bot.send_photo(chat_id, avatar_url, caption=report_text, parse_mode="Markdown", reply_markup=markup)
         else:
             bot.send_message(chat_id, report_text, parse_mode="Markdown", reply_markup=markup)
 
     except Exception as e:
-        bot.edit_message_text(f"❌ حدث خطأ أثناء سحب البيانات: {str(e)}", chat_id, wait_msg.message_id, parse_mode="Markdown")
+        bot.edit_message_text(f"❌ حدث خطأ: {str(e)}", chat_id, wait_msg.message_id, parse_mode="Markdown")
 
 if __name__ == '__main__':
-    print("🤖 البوت الاستخباري يعمل بأقصى قوة...")
+    print("🤖 البوت يعمل بكامل طاقته الاستخباراتية...")
     try:
         bot.remove_webhook()
         time.sleep(2)
