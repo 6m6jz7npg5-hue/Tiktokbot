@@ -13,7 +13,7 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# تعريف الحالات لتنظيم تدفق المحادثة والأزرار المتفرعة
+# تعريف الحالات
 CHOOSING, TYPING_USERNAME, ACCOUNT_VIEW = range(3)
 
 # إعداد التسجيل
@@ -23,14 +23,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# توكن البوت
 BOT_TOKEN = "8955349729:AAG0JdkQ5gyFd-IPqjjDJHlj1xtLXiNFjBY"
 
-# ========== دوال جلب البيانات من تيك توك ==========
+# ========== دوال جلب وتنظيف البيانات ==========
 def clean_url(url: str) -> str:
     if not url:
         return url
     return url.replace("\\/", "/").replace("\\u002F", "/")
+
+def safe_decode(text: str) -> str:
+    """فك ترميز النصوص العربية والإيموجي بشكل سليم منعاً للرموز الغريبة"""
+    if not text:
+        return ""
+    try:
+        # معالجة الرموز المهربة Unicode
+        return text.encode().decode('unicode-escape').encode('latin1').decode('utf-8', errors='ignore')
+    except Exception:
+        try:
+            return text.encode('utf-8', errors='ignore').decode('utf-8', errors='ignore')
+        except Exception:
+            return text
 
 def fetch_tiktok_data(username: str) -> dict:
     url = f"https://www.tiktok.com/@{username}"
@@ -60,6 +72,8 @@ def fetch_tiktok_data(username: str) -> dict:
                 "nickname": r'"nickname":"([^"]+)"',
                 "uniqueId": r'"uniqueId":"([^"]+)"',
                 "avatarLarger": r'"avatarLarger":"([^"]+)"',
+                "avatarMedium": r'"avatarMedium":"([^"]+)"',
+                "avatarThumb": r'"avatarThumb":"([^"]+)"',
                 "signature": r'"signature":"((?:[^"\\]|\\.)*)"',
                 "region": r'"region":"([^"]+)"',
                 "verified": r'"verified":(true|false)',
@@ -73,19 +87,17 @@ def fetch_tiktok_data(username: str) -> dict:
                     elif key == "verified":
                         user_data[key] = match.group(1) == "true"
                     else:
-                        value = match.group(1)
-                        try:
-                            value = value.encode().decode('unicode_escape')
-                        except Exception:
-                            pass
-                        user_data[key] = value
+                        val = match.group(1)
+                        user_data[key] = safe_decode(val)
+            
+            # البحث عن أفضل صورة بروفايل متاحة احتياطياً
+            avatar = user_data.get("avatarLarger") or user_data.get("avatarMedium") or user_data.get("avatarThumb")
+            if avatar:
+                user_data["avatar"] = clean_url(avatar)
             
             video_urls = re.findall(r'"playAddr":"([^"]+)"', json_text)
             if video_urls:
                 user_data["video_urls"] = [clean_url(v) for v in video_urls[:5]]
-            
-            if "avatarLarger" in user_data:
-                user_data["avatarLarger"] = clean_url(user_data["avatarLarger"])
             
             if user_data:
                 break
@@ -96,19 +108,20 @@ def format_user_data(username: str, data: dict) -> str:
     if not data:
         return f"⚠️ تعذر جلب بيانات الحساب @{username}. تأكد من صحة اليوزر أو أن الحساب عام."
 
-    lines = [f"📊 **معلومات حساب تيك توك**", f"━━━━━━━━━━━━━━━━"]
-    if "nickname" in data:
-        lines.append(f"👤 **الاسم**: {data['nickname']}")
-    if "uniqueId" in data:
-        lines.append(f"🆔 **اليوزر**: @{data['uniqueId']}")
-    if "userId" in data:
-        lines.append(f"🔢 **الرقم التعريفي (ID)**: `{data['userId']}`")
-    if "region" in data:
-        lines.append(f"🌍 **البلد**: {data['region']}")
-    else:
-        lines.append("🌍 **البلد**: غير متاح (مخفي من المنصة)")
-    if "signature" in data and data["signature"]:
-        lines.append(f"📝 **البايو**: {data['signature']}")
+    nickname = data.get('nickname', username)
+    unique_id = data.get('uniqueId', username)
+    region = data.get('region', 'غير متاح (مخفي)')
+    signature = data.get('signature', 'لا يوجد بايو')
+    
+    lines = [
+        f"📊 **معلومات الحساب**: @{unique_id}",
+        f"━━━━━━━━━━━━━━━━",
+        f"👤 **الاسم**: {nickname}",
+        f"🆔 **اليوزر**: @{unique_id}",
+        f"🌍 **البلد**: {region}",
+        f"📝 **البايو**: {signature}",
+    ]
+    
     if "followerCount" in data:
         lines.append(f"👥 **المتابعون**: {data['followerCount']:,}")
     if "followingCount" in data:
@@ -117,12 +130,16 @@ def format_user_data(username: str, data: dict) -> str:
         lines.append(f"❤️ **الإعجابات**: {data['heartCount']:,}")
     if "videoCount" in data:
         lines.append(f"🎬 **الفيديوهات**: {data['videoCount']:,}")
-    if "verified" in data and data["verified"]:
+    if data.get("verified"):
         lines.append("✔️ **حساب موثّق**")
+
+    lines.append("\n📌 **ملاحظات:**")
+    lines.append("• معلومات الدولة قد لا تكون متاحة للعامة.")
+    lines.append("• معلومات الدخول (إيميل/رقم) خاصة ولا يمكن جلبها من الصفحة العامة.")
 
     return "\n".join(lines)
 
-# ========== دوال التنقل والأزرار التفاعلية ==========
+# ========== دوال التحكم بالواجهة ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     keyboard = [
@@ -153,7 +170,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     elif data == "login_info":
         keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_menu")]]
         await query.message.edit_text(
-            "🛡️ معلومات الدخول (إيميل/رقم) خاصة بالمستخدم ولا يمكن جلبها نهائياً من الواجهة العامة لأي حساب.",
+            "🛡️ معلومات الدخول (إيميل/رقم) هي معلومات خاصة وحساسة، ولا يمكن جلبها من الصفحة العامة لأي حساب.",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return CHOOSING
@@ -161,7 +178,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     elif data == "country_info":
         keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_menu")]]
         await query.message.edit_text(
-            "🌍 معلومات الدولة تظهر إن كانت متاحة في السجلات العامة، وغالباً ما يخفيها المستخدمون.",
+            "🌍 معلومات الدولة (الموقع الجغرافي) غالباً ما تكون مخفية في ملف الحساب العام، ولا يمكن استخراجها بشكل موثوق.",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return CHOOSING
@@ -176,13 +193,13 @@ async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return CHOOSING
 
     username = update.message.text.strip().lstrip("@")
-    await update.message.reply_text(f"⏳ جاري جلب بيانات الحساب الحقيقية لـ @{username} ...")
+    msg = await update.message.reply_text(f"⏳ جاري جلب بيانات الحساب لـ @{username} ...")
 
     data = fetch_tiktok_data(username)
     if not data:
         keyboard = [[InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_menu")]]
         await update.message.reply_text(
-            f"⚠️ تعذر جلب بيانات الحساب @{username}. تأكد من صحة اليوزر وأن الحساب ليس خاصاً.",
+            f"⚠️ تعذر جلب بيانات الحساب @{username}. تأكد من صحة اليوزر وأن الحساب عام.",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         context.user_data["state"] = None
@@ -193,107 +210,59 @@ async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     formatted = format_user_data(username, data)
 
-    # أزرار متفرعة بعد فحص الحساب
     keyboard = [
-        [InlineKeyboardButton("📖 عرض الاستوريات / الفيديوهات", callback_data="show_stories")],
         [InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_menu")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if "avatarLarger" in data and data["avatarLarger"]:
+    # إرسال الصورة بدقة واحتياطياً النص لو لم تتوفر
+    avatar_url = data.get("avatar")
+    if avatar_url:
         try:
             await update.message.reply_photo(
-                photo=data["avatarLarger"],
+                photo=avatar_url,
                 caption=formatted,
                 reply_markup=reply_markup,
                 parse_mode="Markdown"
             )
-        except Exception:
-            await update.message.reply_text(formatted, reply_markup=reply_markup, parse_mode="Markdown")
-    else:
-        await update.message.reply_text(formatted, reply_markup=reply_markup, parse_mode="Markdown")
+            # حذف رسالة الانتظار لتنظيف الشاشة
+            await msg.delete()
+            context.user_data["state"] = None
+            return ACCOUNT_VIEW
+        except Exception as e:
+            logger.warning(f"Failed to send photo: {e}")
 
+    # البديلة في حال تعذر إرسال الصورة
+    await update.message.reply_text(formatted, reply_markup=reply_markup, parse_mode="Markdown")
+    await msg.delete()
     context.user_data["state"] = None
     return ACCOUNT_VIEW
 
 async def account_view_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    data = query.data
-
-    if data == "back_to_menu":
+    if query.data == "back_to_menu":
         return await start(update, context)
-
-    elif data == "show_stories":
-        account_data = context.user_data.get("account_data", {})
-        video_urls = account_data.get("video_urls", [])
-        
-        if not video_urls:
-            keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back_to_menu")]]
-            await query.message.edit_text("⚠️ لا توجد فيديوهات/استوريات متاحة لهذا الحساب.", reply_markup=InlineKeyboardMarkup(keyboard))
-            return ACCOUNT_VIEW
-
-        # عرض أول فيديو كمثال مع أزرار التنقل (التالي، السابق، الرجوع)
-        context.user_data["stories"] = video_urls
-        context.user_data["story_index"] = 0
-        
-        await send_story_message(update, context)
-        return ACCOUNT_VIEW
-
     return ACCOUNT_VIEW
 
-async def send_story_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    stories = context.user_data.get("stories", [])
-    index = context.user_data.get("story_index", 0)
-    
-    if not stories:
-        return
-
-    video_url = stories[index]
-    total = len(stories)
-
-    keyboard = [
-        [
-            InlineKeyboardButton("◀️ السابق", callback_data="prev_story"),
-            InlineKeyboardButton(f"{index+1}/{total}", callback_data="noop"),
-            InlineKeyboardButton("التالي ▶️", callback_data="next_story"),
-        ],
-        [InlineKeyboardButton("🔙 رجوع لملف الحساب", callback_data="back_to_account")],
-    ]
-    
-    # بما أن الـ callback query يعرض فيديو أو رسالة جديدة
-    await query.message.reply_video(
-        video=video_url,
-        caption=f"🎬 فيديو رقم {index+1} من {total}",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-# ========== التشغيل الرئيسي ==========
 def main() -> None:
     application = Application.builder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            CHOOSING: [
-                CallbackQueryHandler(button_callback, pattern="^(check_account|login_info|country_info|back_to_menu)$")
-            ],
+            CHOOSING: [CallbackQueryHandler(button_callback)],
             TYPING_USERNAME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_username),
                 CallbackQueryHandler(button_callback)
             ],
-            ACCOUNT_VIEW: [
-                CallbackQueryHandler(account_view_callback)
-            ],
+            ACCOUNT_VIEW: [CallbackQueryHandler(account_view_callback)],
         },
-        fallbacks=[
-            CommandHandler("start", start),
-        ],
+        fallbacks=[CommandHandler("start", start)],
     )
 
     application.add_handler(conv_handler)
     application.run_polling()
 
-if __name> == "__main__":
+if __name__ == "__main__":
     main()
